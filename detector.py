@@ -1,13 +1,10 @@
-from market import *
+from market import fetch_market
 from datetime import datetime
 import numpy as np
 import time
 
-# Input market ticker here
-ticker = "KXSAUDIPLGAME-26JAN14AASALT-AAS"
-
 # Find the last n markets and store it in history [1 second intervals]
-def fetch_past_markets(n):
+def fetch_past_markets(ticker, n):
     history = []
     prev_market = fetch_market(ticker)
     for i in range(n):
@@ -20,7 +17,7 @@ def fetch_past_markets(n):
 
 # Calibrate parameter thresholds of the bot
 # EX: a "large" delta_vol differs by market, so you need to define what is "large"
-def calibrate():
+def calibrate(ticker):
     duration = 30 # calibration duration in seconds
 
     delta_vols = []
@@ -28,7 +25,7 @@ def calibrate():
     delta_spreads = []
 
     # Store the last 10 markets (stores up to 10 seconds ago)
-    history = fetch_past_markets(10)
+    history = fetch_past_markets(ticker, 10)
 
     init_time = time.time()
 
@@ -66,7 +63,8 @@ def calibrate():
 
     return thresholds
 
-def main():
+# Runs the main spike detector algorithm till end_hour:end_minute
+def detect(ticker, end_hour, end_minute):
     alpha = 1 # evidence that move is a fake spike
     beta = 2 # evidence that move is a real repricing
     decay = 0.9 # old evidence loses 10% weight each jump
@@ -76,12 +74,12 @@ def main():
 
     print("Calibrating model...")
     # Calibrate model first
-    thresholds = calibrate()
+    thresholds = calibrate(ticker)
     print(thresholds)
     print("Calibration success!")
 
     # Store the last 10 markets (stores up to 10 seconds ago)
-    history = fetch_past_markets(10)
+    history = fetch_past_markets(ticker, 10)
 
     print("Trading commencing...")
 
@@ -92,12 +90,15 @@ def main():
         # compares current market to market 10 seconds ago
         curr_market = fetch_market(ticker, history[0])
 
+        alpha = max(1.0, alpha * 0.99)  # Very slow decay of evidence over time
+        beta = max(2.0, beta * 0.99)
+
         # If the YES price moved up by at least “jump” threshold,
         # classify whether the move looks like a fake spike (alpha) or a real repricing (beta)
         if curr_market['delta_price'] >= thresholds['price_high']:
             # Deprioritize old evidence
-            alpha *= decay
-            beta *= decay
+            alpha = max(1.0, alpha * decay)
+            beta  = max(2.0, beta * decay)
 
             # Low volume on a jump suggests a hype spike -> alpha++
             if curr_market['delta_vol'] <= thresholds['vol_low']:
@@ -122,8 +123,8 @@ def main():
             print("mu", mu)
 
         if mu > 0.7:
-            # Check if the price is starting to flatten out or drop
-            if curr_market['delta_price'] <= 0:
+            # Check if the price is starting to drop. If so, bet
+            if curr_market['delta_price'] < 0:
                 print("fake spike predicted, and spike stalled. buy no shares to bet against it!")
                 date = datetime.fromtimestamp(time.time())
                 print(date)
@@ -138,11 +139,35 @@ def main():
                 time.sleep(15)
 
                 # reset history, fetch new past 10 markets
-                history = fetch_past_markets(10)
+                history = fetch_past_markets(ticker, 10)
 
+        # update history
         history.pop(0)
         history.append(curr_market)
 
+        # End when end time is reached
+        if datetime.now().hour == end_hour and datetime.now().minute == end_minute:
+            break
 
-if __name__ == '__main__':
+def main():
+    ticker = input("Input market ticker: ")
+
+    start_hour = int(input("Enter start hour: "))
+    start_minute = int(input("Enter start minute: "))
+
+    end_hour = int(input("Enter end hour: "))
+    end_minute = int(input("Enter end minute: "))
+
+    # start program at start time (3:25 AM for CBA games)
+    print('Waiting for start time...')
+    while True:
+        if datetime.now().hour == start_hour and datetime.now().minute == start_minute:
+            break
+        time.sleep(60)
+
+    detect(ticker, end_hour, end_minute)
+
+    print('Program ended.')
+
+if __name__ == "__main__":
     main()
