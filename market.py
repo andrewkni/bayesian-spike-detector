@@ -1,11 +1,13 @@
 import requests
 
-def fetch_market(ticker):
+def fetch_market(ticker, prev_market=None):
     """
     Returns the market data for a ticker.
-    Computes the spread and stores it in the market object.
+    Computes the spread.
+    Computes the change in volume, spread, and pct change in price if given a previous market.
 
     :param ticker:
+    :param prev_market:
     :return: market
     """
     url = f"https://api.elections.kalshi.com/trade-api/v2/markets/{ticker}"
@@ -14,8 +16,18 @@ def fetch_market(ticker):
     market_data = market_response.json()
     market = market_data['market']
 
-    # Calculate additional parameters
-    market['yes_spread'] = market['yes_ask'] - market['yes_bid']
+    market['yes_spread'] = market['yes_ask'] - market['yes_bid']  # spread
+
+    # Calculate additional parameters if there is a previous market
+    if prev_market:
+        # change in volume
+        market['delta_vol'] = market['volume'] - prev_market['volume']
+
+        # change in spread
+        market['delta_spread'] = market['yes_spread'] - prev_market['yes_spread']
+
+        # change in price
+        market['delta_price'] = float(market['last_price_dollars']) - float(prev_market['last_price_dollars'])
 
     return market
 
