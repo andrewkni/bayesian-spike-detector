@@ -26,8 +26,8 @@ def fetch_market(ticker, prev_market=None):
         # change in spread
         market['delta_spread'] = market['yes_spread'] - prev_market['yes_spread']
 
-        # change in price
-        market['delta_price'] = float(market['last_price_dollars']) - float(prev_market['last_price_dollars'])
+        # change in price, convert to cents
+        market['delta_price'] = int(round(100*(float(market['last_price_dollars']) - float(prev_market['last_price_dollars']))))
 
     return market
 
