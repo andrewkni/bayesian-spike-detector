@@ -1,5 +1,6 @@
 from market import fetch_market
 from datetime import datetime
+from bet import place_bet
 import numpy as np
 import time
 
@@ -73,9 +74,7 @@ def calibrate(ticker):
     thresholds = {
         "vol_low": vol_low,
         "vol_high": vol_high,
-
         "spread_thresh": spread_thresh,
-
         "price_high": price_high,
     }
 
@@ -101,14 +100,15 @@ def detect(ticker, end_hour, end_minute):
 
     print("Trading commencing...")
 
-    # Alpha/beta updates
-    while True:
+    # Alpha/beta updates, end when end time is reached
+    while not (datetime.now().hour == end_hour and datetime.now().minute == end_minute):
         time.sleep(1)
 
         # compares current market to market 10 seconds ago
         curr_market = fetch_market(ticker, history[0])
 
-        alpha = max(1.0, alpha * 0.99)  # Very slow decay of evidence over time
+        # Very slow decay of evidence over time
+        alpha = max(1.0, alpha * 0.99)
         beta = max(2.0, beta * 0.99)
 
         if curr_market['delta_price'] >= thresholds['price_high']:
@@ -142,41 +142,110 @@ def detect(ticker, end_hour, end_minute):
             elif curr_market['delta_spread'] >= thresholds['spread_thresh']:
                 alpha += 1
 
-            print("JUMP",
-                  "Δp", curr_market["delta_price"],
-                  "Δv", curr_market["delta_vol"],
-                  "Δspr", curr_market["delta_spread"],
-                  "alpha", alpha, "beta", beta)
-
+            # update mu
             mu = alpha / (alpha + beta)
-            print("mu", mu)
 
+        # Fake spike confidence reached
         if mu > 0.7:
             # Check if the price is starting to drop. If so, bet
             if curr_market['delta_price'] <= 0:
-                print("fake spike predicted, and spike stalled. buy no shares to bet against it!")
-                date = datetime.fromtimestamp(time.time())
-                print(date)
+                # Check spread before buying
+                no_bid = curr_market["no_bid"]
+                no_ask = curr_market["no_ask"]
+                spread = no_ask - no_bid
+                pre_spike_no = max(market['no_bid'] for market in history)
 
-                # Reset alpha and beta values
-                alpha = 1
-                beta = 2
+                max_spread = 3 # spread loses profit, so define a max spread
+                buffer = 2 # buffer for Kalshi fees
+                expected_net = pre_spike_no - no_ask
 
-                mu = alpha / (alpha + beta)
+                print("fake spike predicted, and spike stalled")
 
-                # spike cooldown
-                time.sleep(15)
+                # whether a trade occurs
+                trade = True
 
-                # reset history, fetch new past 10 markets
-                history = fetch_past_markets(ticker, 10)
+                if not (0 <= no_bid <= 100 and 0 <= no_ask <= 100) or no_ask < no_bid:
+                    print("No trade because of bad prices")
+                    trade = False
+
+                if spread > max_spread:
+                    print("No trade because of bad spread")
+                    trade = False
+
+                if expected_net <= buffer:
+                    print("No trade because expected profit does not exceed Kalshi fees")
+                    trade = False
+
+                if trade:
+                    print("buying no shares to bet against it.")
+
+                    date = datetime.fromtimestamp(time.time())
+                    print(date)
+
+                    # places 1 contract no purchase
+                    buy = place_bet(ticker, "buy", "no", curr_market['no_ask'])
+
+                    # Ensures purchase went through
+                    data = buy.json()
+                    if "order" not in data or data["order"]["status"] in ("canceled", "rejected"):
+                        print("Buy didn't fill")
+
+                        # update history
+                        history.pop(0)
+                        history.append(curr_market)
+
+                        continue
+
+                    # Reset alpha and beta values
+                    alpha = 1
+                    beta = 2
+                    mu = alpha / (alpha + beta)
+
+                    # sell logic
+                    stop_loss = 5
+                    entry_cost = curr_market['no_ask']
+                    stop_level = max(1, entry_cost - stop_loss)
+
+                    max_timeout = 600
+                    t0 = time.time()
+
+                    while curr_market['no_bid'] < pre_spike_no:
+                        # exits market if no price drops by 5
+                        if curr_market['no_bid'] <= stop_level:
+                            print("stop loss hit")
+                            break
+
+                        # exits market if no activity for max_timeout seconds
+                        if time.time() - t0 > max_timeout:
+                            print("max timeout reached")
+                            break
+
+                        time.sleep(1)
+                        curr_market = fetch_market(ticker, history[0])
+                        history.pop(0)
+                        history.append(curr_market)
+
+                    sell = place_bet(ticker, "sell", "no")
+                    s = sell.json()
+                    if "order" not in s or s["order"]["status"] in ("canceled", "rejected"):
+                        print("WARNING: Sell did not fill")
+                    else:
+                        print("Contracts sold")
+
+                    print("Net:", curr_market['no_bid'] - entry_cost)
+
+
+                    # spike cooldown
+                    time.sleep(15)
+
+                    # reset history, fetch new past 10 markets
+                    history = fetch_past_markets(ticker, 10)
+                    continue
 
         # update history
         history.pop(0)
         history.append(curr_market)
 
-        # End when end time is reached
-        if datetime.now().hour == end_hour and datetime.now().minute == end_minute:
-            break
 
 def main():
     ticker = input("Input market ticker: ")
