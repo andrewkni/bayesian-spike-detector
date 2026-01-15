@@ -68,12 +68,7 @@ def calibrate(ticker):
         spread_thresh = int(np.percentile(delta_spreads_nonzero, 80))
         spread_thresh = max(1, spread_thresh)
 
-    # Compute price threshold with all delta price that is not 0
-    delta_prices_nonzero = delta_prices[delta_prices > 0]
-    if len(delta_prices_nonzero) == 0:
-        price_high = 2
-    else:
-        price_high = max(2, int(np.percentile(delta_prices_nonzero, 99.5)))
+    price_high = max(2, int(np.percentile(delta_prices, 95)))
 
     thresholds = {
         "vol_low": vol_low,
@@ -148,7 +143,6 @@ def detect(ticker, end_hour, end_minute):
                 alpha += 1
 
             print("JUMP",
-                  "ts", curr_market["ts"],
                   "Δp", curr_market["delta_price"],
                   "Δv", curr_market["delta_vol"],
                   "Δspr", curr_market["delta_spread"],
