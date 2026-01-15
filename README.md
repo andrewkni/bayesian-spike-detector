@@ -5,12 +5,12 @@ When a spike looks fake and stalls, it can buy NO and sell NO on reversal (with 
 
 ## Files
 
-- api_info.py — API creds + request signing (+ get_balance()).
-- market.py — Fetch market + compute yes_spread, delta_vol, delta_spread, delta_price.
-- bet.py — Place orders + log to trade_log.txt (BUY = limit IOC, SELL = market reduce-only).
-- data.py — Log tickers to CSV at ~1Hz for backtesting.
-- backtester.py — Run detector on CSV data (prints jumps + fake spike signals).
-- detector.py — Live detector/trader.
+- api_info.py - API creds + request signing
+- market.py - Fetch market + compute yes_spread, delta_vol, delta_spread, delta_price.
+- bet.py - Place orders + log to trade_log.txt (BUY = limit IOC, SELL = market reduce-only).
+- data.py - Log tickers to CSV at ~1Hz for backtesting.
+- backtester.py - Run detector on CSV data (prints jumps + fake spike signals).
+- detector.py - Live detector/trader.
 
 ## Install
 
